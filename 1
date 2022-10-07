@@ -1,0 +1,190 @@
+// File: mopsolver.c
+// Source file for functions related to solving 
+//    inputted maze in the shortest possible path.
+// @author: Aidan Collins (ajc5660)
+// @date: 12 APR 2022
+// // // // // // // // // // // // // // // // // //
+
+#include <stdio.h>
+#include <stdlib.h>
+#include "queue.h"
+
+#define USAGE "Usage:\nmopsolver [-hdsp] [-i INFILE] [-o OUTFILE]\nOptions:\n" \
+   "%3n-h%15nPrint usage and options list to stdoutonly.%63n(Default: off)\n" \
+   "%3n-d%15nPretty-print (display) the maze after reading.%63n(Default: off)\n" \
+   "%3n-s%15nPrint length of shortest path or 'No solution'.%63n(Default: off)\n" \
+   "%3n-p%15nPretty-print maze with the path, if one exists.%63n(Default: off)\n" \
+   "%3n-i infile%15nRead maze from infile.%63n(Default: stdin)\n" \
+   "%3n-o outfile%15nWrite all output to outfile.%63n(Default: stdout)\n"
+
+/**
+ * Structure representing Maze
+ * @variable traversals: Array of char arrays representing
+ *    maze, with all its open, traversed, and blocked coordinates
+ *    .: untraversed
+ *    #: blocked path
+ *    0: traversed, came from right
+ *    1: traversed, came from below
+ *    2: traversed, came from left
+ *    3: traversed, came from above
+ * @variable height: number of rows in maze
+ * @variable width: number of columns in maze
+ */
+struct MazeADT {
+   char** traversals;
+   int height;
+   int width;
+};
+
+/**
+ * Structure stores boolean values indicating
+ *    if certain flags are being used
+ */
+struct Flags {
+   char d: 1;
+   char s: 1;
+   char p: 1;
+   char i: 1;
+   char o: 1;
+};
+
+typedef struct MazeADT* Maze;
+
+
+/**
+ * Find all possible untraversed moves from current coordinate
+ * @param maze: Representation of maze
+ * @param traversals:  2D boolean (char) array of prior moves
+ * @param moves: Empty boolean (char) array representing moves to make
+ * @param n: row component of coordinate to determine moves from
+ * @param m: column compoent of coordinate to determine moves from
+ */
+void find_moves(Maze maze, char* moves, int n, int m) {
+   // determines moves to open coordinates
+   if (maze->traversals[n][m + 1] == '.') { // right
+      moves[2] = 1;
+   } else if (maze->traversals[n + 1][m] == '.') { // down
+      moves[3] = 1;
+   } else if (maze->traversals[n][m - 1] == '.') { // left
+      moves[0] = 1;
+   } else if (maze->traversals[n - 1][m] == '.') { // up
+      moves[1] = 1;
+   } 
+}
+
+
+/**
+ * Determines if coordinate is finish
+ * @param maze: Maze to check the finish of
+ * @param n: Row component of coordinate to check
+ * @param m: Column component of coordinate to check
+ * @return: 1 if is finish, else 0
+ */
+char is_solution(Maze maze, int n, int m) {
+   return maze->height - 1 == n && maze->width - 1 == m;
+}
+
+
+/**
+ * Performs next move attempt in maze, checking if at finish, and
+ *    enqueueing possible moves from new coordinate
+ * @param que: Queue to dequeue and enqueue new moves
+ * @param maze: Maze to determine the next move for
+ * @param traversals: Data on previously traversed coordinates
+ * @return: 1 if reached finish, else 0
+ */ 
+char next_move(Queue que, Maze maze) {
+   int curr[2];
+   char moves[4] = {0};
+   queue_dequeue(que, curr);
+   find_moves(maze, moves, curr[0], curr[1]);
+   if (is_solution(maze, curr[0], curr[1])) {
+      return 1;
+   }
+   // enqueues possible moves with a preference for down or right
+   if (moves[2]) { // right
+      queue_enqueue(que, curr[0], curr[1] + 1);
+      maze->traversals[curr[0]][curr[1] + 1] = 2;
+   } else if (moves[3]) { // down
+      queue_enqueue(que, curr[0] + 1, curr[1]);
+      maze->traversals[curr[0] + 1][curr[1]] = 3;
+   } else if (moves[0]) { // left
+      queue_enqueue(que, curr[0], curr[1] - 1);
+      maze->traversals[curr[0]][curr[1] - 1] = 0;
+   } else { // up
+      queue_enqueue(que, curr[0] - 1, curr[1]);
+      maze->traversals[curr[0] - 1][curr[1]] = 1;
+   }
+   return 0;
+}
+
+
+/**
+ * Takes file or command line input of representation of a maze.
+ * Uses breadth-first search to solve the shortest path.
+ * Outputs ASCII representation of maze solution, if possible.
+ * @param argc: number of program arguments
+ * @param argv: program arguments
+ * @return: EXIT_SUCCESS if successful, else EXIT_FAILURE
+ */
+int main(int argc, char** argv) {
+   struct Flags flags = {0};
+   char* infile;
+   char* outfile;
+   // iterate over every program argument
+   for (int i = 1; i < argc; i++) {
+      if (argv[i][0] != '-' || (argv[i][1] == 'i' || argv[i][1] == 'o')
+             && (argv[i][2] != '\0' || i == argc - 1))  {
+         fprintf(stderr, USAGE);
+         return EXIT_FAILURE;
+      } else if (argv[i][1] == 'i') {
+         flags.i = 1;
+         infile = argv[++i];
+      } else if (argv[i][1] == 'o') {
+         flags.o = 1;
+         outfile = argv[++i];
+      } else {
+         int j = 1;
+         while (argv[i][j] != '\0') {
+            switch(argv[i][j]) {
+                case 'h':
+                   printf(USAGE);
+                   break;
+                case 'd':
+                   flags.d = 1;
+                   break;
+                case 's':
+                   flags.s = 1;
+                   break;
+                case 'p':
+                   flags.p = 1;
+                   break;
+                default:
+                   fprintf(stderr, USAGE);
+                   return EXIT_FAILURE;
+            }
+         }
+      }
+   }
+   // initialize Maze data structure
+   char** traversals[64][64];
+   Maze maze;
+   maze->traversals = traversals;
+   FILE* in;
+   if (flags.i) {
+      in = fopen(infile, "w");
+   } else {
+      in = stdin;
+   }
+   if (in == NULL) {
+      perror("Error: ");
+      return EXIT_FAILURE;
+   }
+   maze->width = getline(maze->traversals, &64, in);
+   maze->height++;
+   while (getline(maze->traversals + maze->height, &64, in)) {
+      maze->height++;
+   }
+   // convert 1 -> # and 0 -> . in maze
+
+}
